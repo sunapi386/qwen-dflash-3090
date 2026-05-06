@@ -23,9 +23,10 @@ services:
       - --bin
       - /app/dflash/build/test_dflash
       - --max-ctx
-      # 2048 fits on 24GB with desktop apps running.
-      # Bump to 4096+ if you free VRAM (close browser, Slack, etc).
-      - "2048"
+      # 8192 fits on 24GB with TQ3_0 KV. Short prompts (<2k tokens) work
+      # reliably; longer prompts may OOM the compute graph if desktop apps
+      # consume >1GB VRAM. Close Slack/Zoom/Chrome to free headroom.
+      - "8192"
     deploy:
       resources:
         reservations:

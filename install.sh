@@ -237,6 +237,63 @@ setup_image() {
     ok "Docker image built"
 }
 
+setup_cli() {
+    echo ""
+    printf "  Install CLI chat client (llm by Simon Willison)? [Y/n] "
+    read -r install_cli
+    if [[ "$install_cli" =~ ^[Nn] ]]; then
+        return 0
+    fi
+
+    if command -v llm &>/dev/null; then
+        ok "llm CLI already installed"
+    else
+        info "Installing llm CLI..."
+        if command -v uv &>/dev/null; then
+            uv tool install llm 2>&1 | tail -1
+        elif command -v pipx &>/dev/null; then
+            pipx install llm 2>&1 | tail -1
+        elif command -v pip3 &>/dev/null; then
+            pip3 install --user llm 2>&1 | tail -1
+        elif command -v brew &>/dev/null; then
+            brew install llm 2>&1 | tail -1
+        else
+            warn "Could not install llm (no uv/pipx/pip3/brew). Install manually: https://llm.datasette.io"
+            return 0
+        fi
+    fi
+
+    # Set up shell alias
+    local alias_line="alias qwen='OPENAI_API_KEY=sk-any OPENAI_BASE_URL=http://localhost:${PORT}/v1 llm -m gpt-4o'"
+    local shell_rc=""
+
+    if [ -n "${FISH_VERSION:-}" ] || [ "$(basename "${SHELL:-}")" = "fish" ]; then
+        shell_rc="$HOME/.config/fish/config.fish"
+        alias_line="alias qwen 'OPENAI_API_KEY=sk-any OPENAI_BASE_URL=http://localhost:${PORT}/v1 llm -m gpt-4o'"
+    elif [ -f "$HOME/.zshrc" ]; then
+        shell_rc="$HOME/.zshrc"
+    elif [ -f "$HOME/.bashrc" ]; then
+        shell_rc="$HOME/.bashrc"
+    fi
+
+    if [ -n "$shell_rc" ] && ! grep -q "alias qwen" "$shell_rc" 2>/dev/null; then
+        echo "" >> "$shell_rc"
+        echo "# Qwen3.6 local LLM via DFlash" >> "$shell_rc"
+        echo "$alias_line" >> "$shell_rc"
+        ok "Added 'qwen' alias to $shell_rc"
+    elif grep -q "alias qwen" "$shell_rc" 2>/dev/null; then
+        ok "'qwen' alias already in $shell_rc"
+    fi
+
+    echo ""
+    echo "  Usage (after restarting shell or sourcing rc):"
+    echo "    qwen 'Explain quicksort in 3 sentences'"
+    echo "    echo 'What is this?' | qwen"
+    echo "    qwen chat  # interactive chat session"
+    echo ""
+    ok "CLI ready"
+}
+
 # ── Runtime Commands ─────────────────────────────────────────────────────────
 do_start() {
     if docker ps --format '{{.Names}}' | grep -q "$CONTAINER_NAME"; then
@@ -344,6 +401,21 @@ do_status() {
     fi
 }
 
+do_chat() {
+    if ! docker ps --format '{{.Names}}' | grep -q "$CONTAINER_NAME"; then
+        err "Server not running. Start it first."
+        return 1
+    fi
+
+    if command -v llm &>/dev/null; then
+        info "Starting interactive chat (Ctrl+D to exit)..."
+        echo ""
+        OPENAI_API_KEY=sk-any OPENAI_BASE_URL="http://localhost:${PORT}/v1" llm chat -m gpt-4o
+    else
+        err "llm CLI not installed. Install with: uv tool install llm"
+    fi
+}
+
 do_logs() {
     cd "$INSTALL_DIR"
     docker compose logs --tail 40
@@ -359,9 +431,10 @@ show_menu() {
     echo "  1) Start server"
     echo "  2) Stop server"
     echo "  3) Test (send a prompt)"
-    echo "  4) View logs"
-    echo "  5) Rebuild Docker image"
-    echo "  6) Re-download models"
+    echo "  4) Chat (interactive)"
+    echo "  5) View logs"
+    echo "  6) Rebuild Docker image"
+    echo "  7) Re-download models"
     echo "  q) Quit"
     echo ""
     printf "  Choose: "
@@ -376,9 +449,10 @@ menu_loop() {
             1) do_start ;;
             2) do_stop ;;
             3) do_test ;;
-            4) do_logs ;;
-            5) setup_image ;;
-            6) HF_TOKEN="${HF_TOKEN:-}" setup_models ;;
+            4) do_chat ;;
+            5) do_logs ;;
+            6) setup_image ;;
+            7) HF_TOKEN="${HF_TOKEN:-}" setup_models ;;
             q|Q) echo "Bye."; exit 0 ;;
             *) warn "Invalid choice" ;;
         esac
@@ -424,6 +498,7 @@ main() {
     setup_repo
     setup_models
     setup_image
+    setup_cli
 
     echo ""
     ok "Setup complete!"
