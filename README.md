@@ -99,10 +99,27 @@ Measured on RTX 3090, Qwen3.6-27B Q4_K_M, DFlash speculative decoding:
 | VRAM usage (model + draft) | ~19 GB |
 | Max context (24 GB card) | 8192 tokens |
 
+## VRAM Budget Reality Check (24 GB)
+
+The 2x speed boost is real, but DFlash's draft model eats into context headroom:
+
+| Component | VRAM |
+|---|---|
+| Target (Qwen3.6-27B Q4_K_M) | ~15 GB |
+| Draft (DFlash bf16) | ~3.3 GB |
+| Desktop apps (Xorg, browser, etc.) | ~1 GB |
+| **Available for KV + compute graphs** | **~4.7 GB** |
+
+This means prompts beyond ~4k tokens will OOM the compute graph allocation. For practical use cases that need longer context (chat history, system prompts, code, RAG), you'd be better off dropping the draft model and running the target alone through llama.cpp or vLLM at ~35 tok/s with 16-32k context.
+
+**DFlash's sweet spot is 48 GB+ cards** (A6000, dual-GPU, etc.) where you get both the 2x speed and a usable context window.
+
+On a 3090, this is a working proof-of-concept and benchmark — real daily-driver use wants more VRAM or a smaller model.
+
 ## Gotchas
 
 - **BuildKit GPG failure**: The nvidia/cuda base image has GPG issues with BuildKit. The installer uses `DOCKER_BUILDKIT=0` automatically.
-- **OOM on long prompts**: Model (15 GB) + draft (3.3 GB) + desktop apps leaves limited headroom. Prompts >4k tokens may OOM the compute graph. Close Slack/Zoom/Chrome to free VRAM.
+- **OOM on long prompts**: Prompts >4k tokens OOM the compute graph. Close Slack/Zoom/Chrome to free ~1 GB VRAM, or reduce `--max-ctx`.
 - **TQ3_0 KV cache forced**: Required on 24 GB cards. The server only auto-enables it above 6144 ctx, but F16 KV doesn't fit regardless.
 - **HF gated token permissions**: Fine-grained tokens need "Access public gated repos" enabled in token settings.
 - **Qwen3.6 thinking mode**: The model outputs its reasoning by default. Responses include a thinking/planning section before the actual answer.
